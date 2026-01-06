@@ -1,5 +1,4 @@
 fastapi
 uvicorn
-ultralytics
-paddlepaddle
-paddleocr
+rapidocr_onnxruntime
+onnxruntime

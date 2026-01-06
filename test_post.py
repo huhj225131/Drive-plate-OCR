@@ -4,7 +4,7 @@ import base64
 import time
 
 # Đường dẫn ảnh muốn gửi
-image_path = r"D:\2025.1\iot\drplate_ai\anh-bia-6.jpg"
+image_path = r"D:\2025.1\iot\drplate_ai\test_data\anh-bia-6.jpg"
 
 # đọc ảnh, encode Base64
 with open(image_path, "rb") as f:
