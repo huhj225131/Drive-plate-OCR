@@ -2,3 +2,5 @@ fastapi
 uvicorn
 rapidocr-onnxruntime
 onnxruntime
+cv2
+numpy
