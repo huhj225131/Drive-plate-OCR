@@ -100,7 +100,7 @@
 import cv2
 import numpy as np
 import onnxruntime as ort
-from rapidocr_onnxruntime import RapidOCR
+from paddleocr import PaddleOCR
 
 class ImgToPlate:
     def __init__(self, 
@@ -113,7 +113,6 @@ class ImgToPlate:
         self.conf_threshold = confidence
         self.iou_threshold = threshold
 
-       
         print(f">> Loading YOLO ONNX ({model_path})...")
         try:
             self.yolo_session = ort.InferenceSession(
@@ -125,25 +124,25 @@ class ImgToPlate:
             print(f"Lỗi load YOLO: {e}")
             exit()
 
-     
-        print(">> Loading RapidOCR...")
-        self.ocr = RapidOCR()
+        
+        print(">> Loading PaddleOCR...")
+        self.ocr_model = PaddleOCR(
+            lang="en",
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,   
+            enable_mkldnn=True,              
+        )
 
     def preprocess(self, img):
-        """
-        Chuẩn hóa ảnh đầu vào cho YOLO (Letterbox resize)
-        """
+        """Chuẩn hóa ảnh đầu vào cho YOLO (Letterbox resize)"""
         h, w = img.shape[:2]
         scale = min(self.input_size / h, self.input_size / w)
         nh, nw = int(h * scale), int(w * scale)
         
-        # Resize ảnh
         img_resized = cv2.resize(img, (nw, nh))
         
-        # Tạo canvas màu xám (padding)
         canvas = np.full((self.input_size, self.input_size, 3), 114, dtype=np.uint8)
-        
-    
         canvas[:nh, :nw, :] = img_resized
     
         blob = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
@@ -157,47 +156,38 @@ class ImgToPlate:
         if image is None:
             return ""
 
-        # BƯỚC 1: Preprocess ảnh
+        # BƯỚC 1: Detect biển số (YOLO ONNX)
         blob, scale = self.preprocess(image)
-
-        # BƯỚC 2: Detect biển số (Inference)
         outputs = self.yolo_session.run(None, {self.input_name: blob})
-        
         
         pred = np.squeeze(outputs[0]).T
         
-        # Lọc theo confidence
         scores = np.max(pred[:, 4:], axis=1)
         keep = scores > self.conf_threshold
         pred = pred[keep]
         scores = scores[keep]
         
-        # Nếu không tìm thấy gì thì return
         if len(scores) == 0:
             return ""
 
-        # Giải mã box (cx, cy, w, h) -> (x1, y1, x2, y2)
         boxes = pred[:, :4]
         boxes[:, 0] -= boxes[:, 2] / 2  # x1
         boxes[:, 1] -= boxes[:, 3] / 2  # y1
         boxes[:, 2] += boxes[:, 0]      # x2
         boxes[:, 3] += boxes[:, 1]      # y2
 
-  
         boxes /= scale
         
-   
         indices = cv2.dnn.NMSBoxes(boxes.tolist(), scores.tolist(), self.conf_threshold, self.iou_threshold)
 
         final_plate_text = ""
 
-        # BƯỚC 4: Cắt ảnh và OCR
+        
         if len(indices) > 0:
-            # Lấy box có độ tin cậy cao nhất (hoặc loop qua nếu muốn lấy hết)
             i = indices.flatten()[0] 
             x1, y1, x2, y2 = map(int, boxes[i])
             
-            # Padding (Mở rộng vùng cắt một chút để OCR tốt hơn)
+            
             h_img, w_img = image.shape[:2]
             pad = 5
             x1 = max(0, x1 - pad)
@@ -205,47 +195,40 @@ class ImgToPlate:
             x2 = min(w_img, x2 + pad)
             y2 = min(h_img, y2 + pad)
 
-            # Crop ảnh biển số
             plate_img = image[y1:y2, x1:x2]
             
             
-            ocr_result, _ = self.ocr(plate_img)
+            ocr_result = self.ocr_model.ocr(plate_img)
+            plate_text = ""
+           
+            if ocr_result and ocr_result[0] is not None:
+                for line in ocr_result[0]["rec_texts"]:
+                    plate_text += line
             
-            if ocr_result:
-             
-                valid_texts = []
-                for line in ocr_result:
-                    text, score = line[1], line[2]
-                    
-                    if score > 0.5: 
-                        valid_texts.append(text)
-                
-                final_plate_text = " ".join(valid_texts)
 
-        return final_plate_text
-
+            return plate_text
+            
 
 if __name__ == "__main__":
     try:
-       
-        model_path = r"50ep1000imgcar.onnx" 
-        img_path = r"D:\2025.1\iot\drplate_ai\test_data\bien_so_xe_may_2.jpg"
         
-       
+        model_path = r"50ep1000imgcar.onnx" 
+        img_path = r"D:\2025.1\iot\drplate_ai\test_data\bien-so-xe-99999.jpg"
+        
         app = ImgToPlate(model_path=model_path) 
         
-        # Đọc ảnh
         img = cv2.imread(img_path)
-        
-        # Chạy nhận diện
-        import time
-        start_time = time.time()
-        
-        result = app(img)
-        
-        print(f"Thời gian xử lý: {time.time() - start_time:.4f}s")
-        print("\n--- KẾT QUẢ ---")
-        print(f"Biển số: {result}")
+        if img is None:
+            print("Không đọc được ảnh!")
+        else:
+            import time
+            start_time = time.time()
+            
+            result = app(img)
+            
+            print(f"Thời gian xử lý: {time.time() - start_time:.4f}s")
+            print("\n--- KẾT QUẢ ---")
+            print(f"Biển số: {result}")
         
     except Exception as e:
         print(f"Lỗi: {e}")

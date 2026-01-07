@@ -1,6 +1,7 @@
 fastapi
 uvicorn
-rapidocr-onnxruntime
 onnxruntime
+paddlepaddle
+paddleocr
 cv2
 numpy
